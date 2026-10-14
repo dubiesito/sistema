@@ -1,0 +1,32 @@
+# Ignorar entorno virtual
+venv/
+env/
+venv\
+
+# Ignorar archivos temporales de Python
+__pycache__/ 
+*.pyc
+
+# Ignorar archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Ignorar ejecutables y carpetas de compilación (PyInstaller, etc.)
+build/
+dist/
+*.spec
+*.exe
+
+# Ignorar archivos empaquetados o zips
+*.zip
+*.rar
+
+# Ignorar DLLs y binarios de Windows
+*.dll
+*.pyd
+*.exe
+
+# Ignorar carpetas de compilación o herramientas
+build/
+dist/
+tools/

@@ -1,0 +1,108 @@
+/* Fondo general de la aplicación */
+QMainWindow {
+    background-color: #F8FAFC;
+}
+
+/* Título Principal */
+#titulo_app {
+    font-size: 24px;
+    font-weight: 900;
+    color: #7A1B29; /* Guinda UNSAAC */
+    letter-spacing: 0.5px;
+}
+
+/* Botón del Usuario en la Cabecera */
+#boton_usuario {
+    background-color: #FFFFFF;
+    border: 2px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #1E293B;
+}
+
+#boton_usuario:hover {
+    background-color: #F1F5F9;
+    border: 2px solid #CBD5E1;
+}
+
+/* Barra de Búsqueda Principal */
+#barra_busqueda {
+    background-color: #FFFFFF;
+    border: 2px solid #CBD5E1;
+    border-radius: 20px;
+    padding: 10px 20px;
+    font-size: 14px;
+    color: #0F172A;
+}
+
+#barra_busqueda:focus {
+    border: 2px solid #7A1B29; /* Brillo Guinda al escribir */
+    background-color: #FFFFFF;
+}
+
+/* Botón de Buscar */
+#btn_buscar {
+    background-color: #7A1B29;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #FFFFFF;
+}
+
+#btn_buscar:hover {
+    background-color: #5A121E;
+}
+
+/* Etiqueta descriptiva 'Filtros rápidos:' */
+#lbl_filtros_titulo {
+    font-weight: bold;
+    color: #334155;
+    font-size: 13px;
+    padding-right: 5px;
+}
+
+/* Botón de radio 'Todos' */
+QRadioButton {
+    font-size: 13px;
+    color: #334155;
+    font-weight: 500;
+    spacing: 6px;
+}
+
+QRadioButton::indicator:checked {
+    background-color: #7A1B29;
+    border: 2px solid #7A1B29;
+    border-radius: 6px;
+}
+
+/* Menús desplegables de filtros */
+QComboBox {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: #1E293B;
+    min-width: 90px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #FFFFFF;        
+    color: #1E293B;                  
+    selection-background-color: #F1F5F9; 
+    selection-color: #7A1B29;        
+    border: 1px solid #CBD5E1;
+    outline: none;
+}
+
+QComboBox:hover {
+    border: 1px solid #94A3B8;
+}
+
+QComboBox::drop-down {
+    border: none;
+}

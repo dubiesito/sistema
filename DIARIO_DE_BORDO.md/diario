@@ -1,0 +1,26 @@
+# 📋 DIARIO DE BORDO - Sistema de Gestión Documental
+
+## 1. Stack Tecnológico
+- **Lenguaje:** Python 3.x (PySide6 para interfaz gráfica)
+- **Base de Datos:** SQL Server (`pyodbc` con Autenticación de Windows)
+- **Diseño Visual:** QSS (`src/styles.qss`) basado en maquetación de Figma
+- **Arquitectura:** Modular por componentes (MVC Iterativo)
+
+## 2. Estrategia de Archivos y Datos
+- **Metadatos:** SQL Server guarda campos descriptivos (N° resolución, fecha, asunto, etc.).
+- **Almacenamiento Físico:** Los archivos PDF se guardarán en una carpeta compartida de red (File System). SQL Server solo almacena la ruta de red (`VARCHAR`).
+
+## 3. Esquema de Base de Datos Implementado
+- **Usuario:** `id`, `usuario_red`, `nombre_completo`, `rol`, `organo_id`
+- **Organos:** `id`, `nombre`, `sigla`
+- **Documento:** `id`, `tipo_documento`, `nro_resolucion`, `nro_expediente`, `titulo` (NULL), `nro_oficio` (NULL), `asunto_sumilla` (VARCHAR(MAX) NULL), `organo_id`, `estado`, `fecha_emision`, `usuario_id`, `fecha_subida`
+
+## 4. Estado de Desarrollo
+- [x] `src/db.py`: Conexión funcional con SQL Server. Lee usuario activo de Windows (`PC 168`) y lista de Órganos.
+- [x] `src/styles.qss`: Estilos definidos para fondo, encabezado, botón de usuario azul y campo de búsqueda con píldora redondeada.
+- [x] `src/components/header.py`: Componente aislado con título y botón de usuario real traído de la BD.
+- [x] `src/components/search_bar.py`: Componente aislado con barra de entrada interactiva y filtros rápidos (Año, Mes, Tipo, Órgano).
+- [x] `src/main.py`: Ventana principal ensamblada modularmente.
+
+## 5. Próximo Paso
+- Crear el componente `src/components/results_table.py` (`QTableWidget`) para mostrar los documentos devueltos por la búsqueda en SQL Server.
