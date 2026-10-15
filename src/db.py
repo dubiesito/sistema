@@ -1,5 +1,6 @@
 import getpass
 import pyodbc
+import os
 
 #autenticación de windows"
 SERVER = r'.\SQLEXPRESS'
@@ -12,13 +13,13 @@ def obtener_conexion():
         f"DRIVER={{{DRIVER}}};"
         f"SERVER={SERVER};"
         f"DATABASE={DATABASE};"
-        "Trusted_Connection=yes;"                                                                                                                                                                                                                                                                                                                           
+        "Trusted_Connection=yes;"
     )
     return pyodbc.connect(connection_string)
+
 #Funcion para obtener el usuario actual de la base de datos
 def obtener_usuario_actual():
     usuario_red = getpass.getuser()
-
     try:
         with obtener_conexion() as conn:
             cursor = conn.cursor()
@@ -56,21 +57,7 @@ def obtener_organos_activos():
         print(f"Error al obtener el órgano: {e}")
         return[]
 
-#prueba local
-if __name__ == "__main__":
-    print("=== Probando el módulo de base de datos === ")
-
-    usuario = obtener_usuario_actual()
-    if usuario:
-        print(f"Usuario detectado en BD: {usuario['nombre']} {usuario['usuario_red']} (Rol: {usuario['activo']})")
-
-    organos = obtener_organos_activos()
-    print(f"Órganos registrados en la BD ({len(organos)}):")
-    for org in organos:
-        print(f" -[{org['nombre']}")
-
 def obtener_documentos_tabla():
-
     try:
         conn = obtener_conexion() 
         if not conn:
@@ -142,11 +129,8 @@ def buscar_documentos(texto, filtros):
         
         # 1. Filtro por Texto (LIMPIEZA INTELIGENTE DE ESPACIOS)
         if texto:
-            # Esto quita espacios al inicio, al final y espacios dobles en el medio
             texto_limpio = " ".join(texto.split())
-            
             if texto_limpio:
-                # 3 condiciones = 3 signos de interrogación
                 query += " AND (d.titulo LIKE ? OR d.nro_resolucion LIKE ? OR d.nro_expediente LIKE ?)"
                 param_texto = f"%{texto_limpio}%"
                 parametros.extend([param_texto, param_texto, param_texto])
@@ -205,7 +189,7 @@ def buscar_documentos(texto, filtros):
         return []
 
 def insertar_documento(datos, ruta_unc, usuario_id=1):
-    """Inserta la cabecera en Documento, su primera versión y audita en Bitacora usando OUTPUT para el ID"""
+    """Inserta la cabecera en Documento, su primera versión y audita en Bitacora"""
     conn = None
     try:
         conn = obtener_conexion()
@@ -214,9 +198,7 @@ def insertar_documento(datos, ruta_unc, usuario_id=1):
             
         cursor = conn.cursor()
         
-        # ==========================================
-        # 1. INSERTAR CABECERA (Tabla: Documento)
-        # ==========================================
+        # 1. INSERTAR CABECERA
         query_doc = """
             INSERT INTO Documento(
                 tipo_documento, nro_resolucion, nro_expediente, nro_oficio,
@@ -227,17 +209,16 @@ def insertar_documento(datos, ruta_unc, usuario_id=1):
             VALUES (?, ?, ?, ?, ?, ?, ?, 'activo', ?, GETDATE());
         """
         cursor.execute(query_doc, (
-            datos.get('tipo'),           # 1. tipo_documento
-            datos.get('resolucion'),     # 2. nro_resolucion
-            datos.get('expediente'),     # 3. nro_expediente
-            datos.get('oficio'),         # 4. nro_oficio
-            datos.get('titulo', ''),     # 5. titulo
-            datos.get('organo_id'),      # 6. organo_id
-            datos.get('fecha_emision'),  # 7. fecha_emision
-            usuario_id                   # 8. usuario_id (Dinámico)
+            datos.get('tipo'),           
+            datos.get('resolucion'),     
+            datos.get('expediente'),     
+            datos.get('oficio'),         
+            datos.get('titulo', ''),     
+            datos.get('organo_id'),      
+            datos.get('fecha_emision'),  
+            usuario_id                   
         ))
         
-        # Capturamos el ID autogenerado
         row = cursor.fetchone()
         if not row or not row[0]:
             conn.rollback()
@@ -245,45 +226,40 @@ def insertar_documento(datos, ruta_unc, usuario_id=1):
             
         nuevo_doc_id = int(row[0])
         
-        # ==========================================
-        # 2. INSERTAR VERSIÓN INICIAL (Tabla: Documento_versiones)
-        # ==========================================
+        # 2. INSERTAR VERSIÓN INICIAL (Agregado asunto_ocr)
         nombre_archivo = ruta_unc.split("\\")[-1]
+        asunto_ocr = datos.get('asunto_ocr', '') # <-- Extraemos de datos
+        
         query_version = """
             INSERT INTO Documento_versiones(
                 documento_id, nro_version, ruta_unc, nombre_archivo,
-                es_vigente, comentario_cambio, usuario_id, fecha_subida
-            ) VALUES (?, 1, ?, ?, 1, 'Versión inicial', ?, GETDATE());
+                es_vigente, comentario_cambio, usuario_id, fecha_subida, asunto_ocr
+            ) VALUES (?, 1, ?, ?, 1, 'Versión inicial', ?, GETDATE(), ?);
         """
         cursor.execute(query_version, (
             nuevo_doc_id,
             ruta_unc,
             nombre_archivo,
-            usuario_id                   
+            usuario_id,
+            asunto_ocr  # <-- Insertamos el asunto
         ))
         
-
+        # 3. BITACORA
         query_bitacora = """
             INSERT INTO Bitacora (usuario_id, documento_id, accion, detalle, fecha)
             VALUES (?, ?, 'SUBIDA NUEVA', ?, GETDATE());
         """
         detalle_accion = f"Se subió el documento {datos.get('resolucion')} (Expediente: {datos.get('expediente')})"
+        cursor.execute(query_bitacora, (usuario_id, nuevo_doc_id, detalle_accion))
         
-        cursor.execute(query_bitacora, (
-            usuario_id,
-            nuevo_doc_id,
-            detalle_accion
-        ))
-        
-        
-        conn.commit() # Si llegamos aquí, los 3 inserts fueron un éxito total
+        conn.commit()
         cursor.close()
         conn.close()
         return True, "None"
         
     except Exception as e:
         if conn:
-            conn.rollback() # Si explota el paso 2 o 3, se deshace el paso 1 automáticamente
+            conn.rollback() 
         print(f"Error en SQL: {e}")
         return False, str(e)
 
@@ -295,14 +271,13 @@ def obtener_siguiente_version(documento_id):
         cursor.execute("SELECT MAX(nro_version) FROM Documento_versiones WHERE documento_id = ?", (documento_id,))
         row = cursor.fetchone()
         conn.close()
-        
         ultima_version = row[0] if row and row[0] else 1
         return ultima_version + 1
     except Exception:
         return 2
     
-def actualizar_version_documento(documento_id, nueva_version, ruta_archivo, comentario="Nueva versión"):
-    """Sube una nueva versión del documento usando el número exacto"""
+def actualizar_version_documento(documento_id, nueva_version, ruta_archivo, comentario="Nueva versión", asunto_ocr=""):
+    """Sube una nueva versión del documento usando el número exacto y agregando asunto_ocr"""
     conn = None
     try:
         conn = obtener_conexion()
@@ -311,30 +286,27 @@ def actualizar_version_documento(documento_id, nueva_version, ruta_archivo, come
             
         cursor = conn.cursor()
         
-        # 1. Desactivar la vigencia de todas las versiones anteriores
         cursor.execute("""
             UPDATE Documento_versiones 
             SET es_vigente = 0 
             WHERE documento_id = ?
         """, (documento_id,))
         
-        # 2. Extraer solo el nombre del PDF para tu columna 'nombre_archivo'
-        import os
         nombre_archivo = os.path.basename(ruta_archivo)
         
-        # 3. Insertar respetando estrictamente tu esquema de BD
         query_version = """
             INSERT INTO Documento_versiones(
                 documento_id, nro_version, ruta_unc, nombre_archivo,
-                es_vigente, comentario_cambio, usuario_id, fecha_subida
-            ) VALUES (?, ?, ?, ?, 1, ?, 1, GETDATE());
+                es_vigente, comentario_cambio, usuario_id, fecha_subida, asunto_ocr
+            ) VALUES (?, ?, ?, ?, 1, ?, 1, GETDATE(), ?);
         """
         cursor.execute(query_version, (
             documento_id,
             nueva_version,
-            ruta_archivo,      # Esto va a la columna ruta_unc
-            nombre_archivo,    # Esto va a la columna nombre_archivo
-            comentario         # Esto va a la columna comentario_cambio
+            ruta_archivo,
+            nombre_archivo,
+            comentario,
+            asunto_ocr # <-- Nuevo parámetro
         ))
         
         conn.commit()
@@ -356,7 +328,7 @@ def obtener_historial_versiones(documento_id):
         cursor = conn.cursor()
         
         query = """
-            SELECT nro_version, fecha_subida, comentario_cambio, ruta_unc, es_vigente
+            SELECT nro_version, fecha_subida, comentario_cambio, ruta_unc, es_vigente, asunto_ocr
             FROM Documento_versiones
             WHERE documento_id = ?
             ORDER BY nro_version DESC
@@ -372,7 +344,8 @@ def obtener_historial_versiones(documento_id):
                 "fecha": f.fecha_subida.strftime("%d/%m/%Y %H:%M") if f.fecha_subida else "",
                 "motivo": f.comentario_cambio if f.comentario_cambio else "Sin motivo especificado",
                 "ruta_pdf": f.ruta_unc,
-                "es_vigente": f.es_vigente
+                "es_vigente": f.es_vigente,
+                "asunto_ocr": f.asunto_ocr if f.asunto_ocr else "" # <-- Lo leemos para el visor
             })
         return historial
     except Exception as e:
@@ -386,7 +359,6 @@ def obtener_documento_por_expediente(nro_expediente):
         if not conn: return None
         cursor = conn.cursor()
         
-        # Corregimos los nombres exactos de columnas según tu tabla Documento
         query = """
             SELECT d.id, d.nro_expediente, d.titulo, d.tipo_documento, 
                    o.nombre AS organo_nombre, d.nro_resolucion, 
@@ -420,13 +392,11 @@ def obtener_usuario_por_red(usuario_red):
     """Busca al usuario en la BD usando el nombre de su computadora (os.getlogin())"""
     conn = None
     try:
-        # Usa el nombre exacto de tu función para conectar a la BD
         conn = obtener_conexion() 
         if not conn:
             return None
 
         cursor = conn.cursor()
-        # Buscamos si existe el usuario_red
         query = "SELECT id, nombre_completo, activo FROM Usuario WHERE usuario_red = ?"
         cursor.execute(query, (usuario_red,))
         row = cursor.fetchone()
@@ -444,4 +414,3 @@ def obtener_usuario_por_red(usuario_red):
     finally:
         if conn:
             conn.close()
-

@@ -141,9 +141,6 @@ def verificar_seguridad():
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # ==========================================
-    # 1. FILTRO DE SEGURIDAD
-    # ==========================================
     acceso_permitido, mensaje = verificar_seguridad()
     
     if not acceso_permitido:
@@ -169,9 +166,7 @@ if __name__ == "__main__":
     except FileNotFoundError:
         print(f"No se encontró el archivo styles.qss en {ruta_qss}")
         
-    # ==========================================
-    # 3. LANZAMIENTO DEL SISTEMA
-    # ==========================================
+ 
     ventana = VentanaPrincipal()
     ventana.show()
     sys.exit(app.exec())

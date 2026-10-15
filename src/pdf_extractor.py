@@ -12,6 +12,73 @@ RUTA_TESSERACT = os.path.join(TOOLS_DIR, "tesseract", "tesseract.exe")
 
 pytesseract.pytesseract.tesseract_cmd = RUTA_TESSERACT
 
+def limpiar_ruido_unsaac(texto):
+    """Elimina membretes, encabezados repetidos y pies de página típicos de la UNSAAC."""
+    if not texto:
+        return ""
+
+    # 1. Patrones de pies de página (dirección, correo, teléfono, ciudad)
+    patrones_pie = [
+        r'(?i)Av\.?\s*de\s*la\s*Cultura[^\n]*',
+        r'(?i)secretaria\.general@unsaac\.edu\.pe',
+        r'(?i)\+?51\s*9\d{2}[-\s]*\d{3}[-\s]*\d{3}',
+        r'(?i)Cusco\s*-\s*Per[úu]',
+        r'(?i)www\.unsaac\.edu\.pe'
+    ]
+    for p in patrones_pie:
+        texto = re.sub(p, '', texto)
+
+    # 2. Patrones de membrete / encabezado de salto de página
+    patrones_encabezado = [
+        r'(?i)UNIVERSIDAD\s+NACIONAL\s+DE\s+SAN\s+ANTONIO\s+ABAD\s+DEL\s+CUSCO',
+        r'(?i)SECRETAR[ÍI]A\s+GENERAL',
+        r'(?i)VICERRECTORADO\s+(ACAD[ÉE]MICO|DE\s+INVESTIGACI[ÓO]N)',
+        r'(?i)RECTORADO',
+        r'(?i)OFICINA\s+DE\s+MODERNIZACI[ÓO]N'
+    ]
+    for p in patrones_encabezado:
+        texto = re.sub(p, '', texto)
+
+    # 3. Normalizar espacios (quita saltos múltiples, dobles espacios y basura de bordes)
+    texto = re.sub(r'\s+', ' ', texto)
+    return texto.strip()
+
+
+def extraer_asunto_ocr(texto_completo):
+    """Extrae el extracto del Artículo Primero descartando el ruido de salto de página."""
+    if not texto_completo:
+        return ""
+
+    # Normalizamos espacio inicial para buscar marcadores
+    texto = re.sub(r'\s+', ' ', texto_completo)
+    
+    # 1. Buscar el marcador de INICIO (PRIMERO, 1°, RESUELVE o ARTÍCULO ÚNICO)
+    patron_inicio = r'(?i)(?:ART[ÍI]CULO\s+PRIMERO|PRIMERO|1[°º]|RESUELVE|ART[ÍI]CULO\s+[ÚU]NICO)[\s:.-]+'
+    match_inicio = re.search(patron_inicio, texto)
+    
+    if not match_inicio:
+        return ""  # Si no encuentra inicio válido, retorna vacío
+        
+    inicio_idx = match_inicio.end()
+    
+    # 2. Buscar el marcador de CORTE (SEGUNDO o 2°)
+    patron_fin = r'(?i)(?:ART[ÍI]CULO\s+SEGUNDO|SEGUNDO|2[°º])'
+    match_fin = re.search(patron_fin, texto[inicio_idx:])
+    
+    if match_fin:
+        asunto_crudo = texto[inicio_idx : inicio_idx + match_fin.start()]
+    else:
+        asunto_crudo = texto[inicio_idx:]
+        # Limpieza extra para documentos cortitos (artículo único)
+        match_pie = re.search(r'(?i)(Reg[íi]strese|Comun[íi]quese|Arch[íi]vese|Dado en)', asunto_crudo)
+        if match_pie:
+            asunto_crudo = asunto_crudo[:match_pie.start()]
+
+    # 3. PASADA DE PURIFICACIÓN: Eliminamos el pie de página y membrete filtrado
+    asunto_limpio = limpiar_ruido_unsaac(asunto_crudo)
+
+    return asunto_limpio
+
 def extraer_datos_inteligentes_pdf(ruta_pdf):
     if not ruta_pdf or not os.path.exists(ruta_pdf):
         return None
@@ -116,6 +183,9 @@ def extraer_datos_inteligentes_pdf(ruta_pdf):
             tipo = tipo or tip_f
             titulo = titulo or tit_f
 
+        # EXTRAER ASUNTO OCR
+        asunto_detectado = extraer_asunto_ocr(limpio_suave)
+
         datos = {
             "resolucion": res or "",
             "sigla_organo": sigla or "",
@@ -123,7 +193,8 @@ def extraer_datos_inteligentes_pdf(ruta_pdf):
             "oficio": ofi or "",
             "tipo": tipo or "",
             "titulo": titulo or "",
-            "fecha": fecha
+            "fecha": fecha,
+            "asunto_ocr": asunto_detectado
         }
 
         print(f"\n====== DATOS FINALES EXTRAÍDOS ======\n{datos}\n=====================================\n")
@@ -132,3 +203,4 @@ def extraer_datos_inteligentes_pdf(ruta_pdf):
     except Exception as e:
         print(f"Error crítico procesando el OCR: {e}")
         return None
+

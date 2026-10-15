@@ -2,7 +2,8 @@ import os
 import shutil
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QVBoxLayout, QLabel, 
-    QPushButton, QFileDialog, QMessageBox, QFrame, QComboBox
+    QPushButton, QFileDialog, QMessageBox, QFrame, QComboBox,
+    QScrollArea, QWidget
 )
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QWheelEvent
@@ -62,6 +63,34 @@ class PdfViewerModal(QDialog):
         lbl_titulo_main.setWordWrap(True)
         lbl_titulo_main.setAlignment(Qt.AlignmentFlag.AlignLeft)
         layout_derecho.addWidget(lbl_titulo_main)
+
+        # -------- NUEVO: TARJETA DE SUMILLA OCR --------
+        sumilla_box = QFrame()
+        sumilla_box.setObjectName("card_box")
+        sumilla_layout = QVBoxLayout(sumilla_box)
+        sumilla_layout.setContentsMargins(10, 8, 10, 8)
+        
+        lbl_sumilla_title = QLabel("📌 Asunto / Sumilla (Extracto):")
+        lbl_sumilla_title.setObjectName("card_title")
+        lbl_sumilla_title.setStyleSheet("color: #3B82F6;") # Azul para resaltar
+        
+        self.scroll_sumilla = QScrollArea()
+        self.scroll_sumilla.setWidgetResizable(True)
+        self.scroll_sumilla.setMaximumHeight(100) # Fija la altura máxima para que no empuje todo
+        self.scroll_sumilla.setStyleSheet("border: none; background: transparent;")
+        
+        self.lbl_sumilla = QLabel("Cargando sumilla...")
+        self.lbl_sumilla.setWordWrap(True)
+        self.lbl_sumilla.setObjectName("card_value")
+        self.lbl_sumilla.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        
+        self.scroll_sumilla.setWidget(self.lbl_sumilla)
+        
+        sumilla_layout.addWidget(lbl_sumilla_title)
+        sumilla_layout.addWidget(self.scroll_sumilla)
+        
+        layout_derecho.addWidget(sumilla_box)
+        # -----------------------------------------------
 
         # 2. Selector de Versión (Usando nuestra clase sin scroll de rueda)
         self.combo_version = NoScrollComboBox()
@@ -151,6 +180,7 @@ class PdfViewerModal(QDialog):
             v_num = self.datos.get('version', 1)
             self.combo_version.addItem(f"Versión {v_num}")
             self.combo_version.blockSignals(False)
+            self.lbl_sumilla.setText("Cargando versión heredada...")
             self._cargar_pdf(self.ruta_pdf_actual)
 
     def _al_cambiar_version(self, index):
@@ -161,14 +191,26 @@ class PdfViewerModal(QDialog):
         nro_version = version_info.get('version', 1)
         motivo = version_info.get('motivo', '').strip()
         ruta_pdf = version_info.get('ruta_pdf', '')
+        
+        # -------- NUEVO: CAPTURAR EL ASUNTO OCR --------
+        asunto_ocr = version_info.get('asunto_ocr', '')
 
         self.ruta_pdf_actual = ruta_pdf
 
+        # Mostrar motivo si existe
         if nro_version > 1 or (motivo and motivo.lower() != "versión original / sin motivo"):
             self.lbl_motivo_val.setText(motivo if motivo else "Sin motivo registrado.")
             self.box_motivo.setVisible(True)
         else:
             self.box_motivo.setVisible(False)
+
+        # Mostrar sumilla
+        if asunto_ocr and asunto_ocr.strip():
+            self.lbl_sumilla.setText(asunto_ocr.strip())
+            self.lbl_sumilla.setStyleSheet("color: #111111; font-size: 12px;")
+        else:
+            self.lbl_sumilla.setText("Sin extracto de sumilla disponible en la base de datos para este documento.")
+            self.lbl_sumilla.setStyleSheet("color: #94A3B8; font-size: 11px; font-style: italic;")
 
         self._cargar_pdf(ruta_pdf)
 
@@ -191,6 +233,10 @@ class PdfViewerModal(QDialog):
         if ruta_destino:
             try:
                 shutil.copy2(self.ruta_pdf_actual, ruta_destino)
+                
+                # Actualiza la fecha de modificación al momento exacto de la descarga
+                os.utime(ruta_destino, None)
+
                 QMessageBox.information(self, "Éxito", "¡El archivo se descargó correctamente!")
                 
                 import subprocess

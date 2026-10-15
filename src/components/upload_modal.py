@@ -101,8 +101,19 @@ class UploadModal(QDialog):
         box_titulo.addWidget(QLabel("Título del Documento:"))
         self.input_titulo = QTextEdit()
         self.input_titulo.setPlaceholderText("Ingrese aquí la descripción o título completo...")
+        self.input_titulo.setMaximumHeight(60) # Lo hacemos un poco más chato para que entre la sumilla
         box_titulo.addWidget(self.input_titulo)
         grid_layout.addLayout(box_titulo, 1, 0, 1, 2)
+
+        # -------- NUEVO CAMPO: SUMILLA OCR --------
+        box_sumilla = QVBoxLayout()
+        box_sumilla.addWidget(QLabel("Sumilla (Extracto Artículo Primero):"))
+        self.input_sumilla = QTextEdit()
+        self.input_sumilla.setPlaceholderText("El texto se extraerá aquí automáticamente tras seleccionar el PDF...")
+        self.input_sumilla.setMaximumHeight(80) 
+        box_sumilla.addWidget(self.input_sumilla)
+        grid_layout.addLayout(box_sumilla, 2, 0, 1, 2)
+        # ------------------------------------------
 
         # Tipo
         box_tipo = QVBoxLayout()
@@ -110,7 +121,7 @@ class UploadModal(QDialog):
         self.combo_tipo = QComboBox()
         self.combo_tipo.addItems(["--- Seleccione Tipo ---", "Aprobar", "Acumular", "Crear", "Modificar", "Resolución", "Encargar", "Disponer", "Establecer", "Proponer", "Concluir"])
         box_tipo.addWidget(self.combo_tipo)
-        grid_layout.addLayout(box_tipo, 2, 0)
+        grid_layout.addLayout(box_tipo, 3, 0)
 
         # Expediente
         box_exp = QVBoxLayout()
@@ -118,7 +129,7 @@ class UploadModal(QDialog):
         self.input_expediente = QLineEdit()
         self.input_expediente.setPlaceholderText("Ej. 26054132")
         box_exp.addWidget(self.input_expediente)
-        grid_layout.addLayout(box_exp, 2, 1)
+        grid_layout.addLayout(box_exp, 3, 1)
 
         # Órgano
         box_organo = QVBoxLayout()
@@ -126,7 +137,7 @@ class UploadModal(QDialog):
         self.combo_organo = QComboBox()
         self._cargar_organos()
         box_organo.addWidget(self.combo_organo)
-        grid_layout.addLayout(box_organo, 3, 0)
+        grid_layout.addLayout(box_organo, 4, 0)
 
         # Oficio
         box_oficio = QVBoxLayout()
@@ -134,7 +145,7 @@ class UploadModal(QDialog):
         self.input_oficio = QLineEdit()
         self.input_oficio.setPlaceholderText("Ej. 282-2026-VRIN-UNSAAC")
         box_oficio.addWidget(self.input_oficio)
-        grid_layout.addLayout(box_oficio, 3, 1)
+        grid_layout.addLayout(box_oficio, 4, 1)
 
         # Fecha
         box_fecha = QVBoxLayout()
@@ -144,7 +155,7 @@ class UploadModal(QDialog):
         self.input_fecha_emision.setSpecialValueText("Seleccione fecha manual")
         self.input_fecha_emision.setDate(QDate.currentDate())
         box_fecha.addWidget(self.input_fecha_emision)
-        grid_layout.addLayout(box_fecha, 4, 0, 1, 2)
+        grid_layout.addLayout(box_fecha, 5, 0, 1, 2)
 
         layout_formulario.addLayout(grid_layout)
         layout_formulario.addSpacing(10)
@@ -277,6 +288,28 @@ class UploadModal(QDialog):
                 background-color: #7A1B29; color: #FFFFFF; font-weight: 900; font-size: 13px; border: none; border-radius: 6px; padding: 10px;
             }
             QPushButton#btn_guardar_modal:hover { background-color: #5A121E; }
+            
+            /* -------- NUEVO: ESTILO PARA LAS ALERTAS (QMessageBox) -------- */
+            QMessageBox {
+                background-color: #1E293B; /* Azul oscuro casi negro */
+                border: 2px solid #334155;
+            }
+            QMessageBox QLabel {
+                color: #FFFFFF; /* Texto blanco puro */
+                font-size: 13px;
+                font-weight: normal;
+            }
+            QMessageBox QPushButton {
+                background-color: #3B82F6; /* Botón azul brillante */
+                color: #FFFFFF;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 20px;
+                font-weight: bold;
+            }
+            QMessageBox QPushButton:hover {
+                background-color: #2563EB; /* Botón azul más oscuro al pasar el mouse */
+            }
         """)
 
     def _cargar_organos(self):
@@ -344,6 +377,14 @@ class UploadModal(QDialog):
                     else:
                         self.input_titulo.clear()
                         self._animar_campo_vacio(self.input_titulo, "Revisar y copiar el título manualmente")
+
+                    # -------- NUEVO: LLENAR SUMILLA OCR --------
+                    if datos_extraidos.get("asunto_ocr"):
+                        self.input_sumilla.setPlainText(datos_extraidos["asunto_ocr"])
+                    else:
+                        self.input_sumilla.clear()
+                        self.input_sumilla.setPlaceholderText("No se detectó el texto del Artículo Primero automáticamente.")
+                    # -------------------------------------------
 
                     if datos_extraidos.get("fecha"): 
                         self.input_fecha_emision.setDate(datos_extraidos["fecha"])
@@ -446,6 +487,7 @@ class UploadModal(QDialog):
         expediente = self.input_expediente.text().strip().upper()
         tipo_doc = self.combo_tipo.currentText().strip()
         nombre_organo = self.combo_organo.currentText().strip()
+        sumilla_texto = self.input_sumilla.toPlainText().strip() # <-- CAPTURAMOS LA SUMILLA
 
         datos = {
             "tipo": tipo_doc,
@@ -454,7 +496,8 @@ class UploadModal(QDialog):
             "oficio": oficio.upper(),
             "titulo": titulo,
             "organo_id": self.combo_organo.currentData(),
-            "fecha_emision": self.input_fecha_emision.date().toString("yyyy-MM-dd")
+            "fecha_emision": self.input_fecha_emision.date().toString("yyyy-MM-dd"),
+            "asunto_ocr": sumilla_texto # <-- LO ENVIAMOS AL DICCIONARIO
         }
         
         self.btn_guardar.setEnabled(False)
