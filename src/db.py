@@ -306,7 +306,7 @@ def actualizar_version_documento(documento_id, nueva_version, ruta_archivo, come
             ruta_archivo,
             nombre_archivo,
             comentario,
-            asunto_ocr # <-- Nuevo parámetro
+            asunto_ocr 
         ))
         
         conn.commit()
@@ -397,19 +397,181 @@ def obtener_usuario_por_red(usuario_red):
             return None
 
         cursor = conn.cursor()
-        query = "SELECT id, nombre_completo, activo FROM Usuario WHERE usuario_red = ?"
+        query = "SELECT id, nombre_completo, activo, rol FROM Usuario WHERE usuario_red = ?"
         cursor.execute(query, (usuario_red,))
         row = cursor.fetchone()
-
+    
         if row:
             return {
                 "id": row[0],
                 "nombre_completo": row[1],
-                "activo": row[2]
+                "activo": row[2],
+                "rol": row[3]
             }
         return None
     except Exception as e:
         print(f"Error verificando usuario: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+# ==================== BORRADO LÓGICO / ARCHIVADO ====================
+ESTADO_ACTIVO = 'activo'
+ESTADO_INACTIVO = 'inactivo'
+ROL_ADMIN = 'ADMIN'
+ROL_OPERADOR = 'OPERADOR'
+
+
+def _obtener_rol(cursor, usuario_id):
+    cursor.execute("SELECT rol FROM Usuario WHERE id = ? AND activo = 1;", (usuario_id,))
+    fila = cursor.fetchone()
+    return fila[0] if fila else None
+
+
+def _es_admin(cursor, usuario_id):
+    return _obtener_rol(cursor, usuario_id) == ROL_ADMIN
+
+
+def _registrar_bitacora(cursor, usuario_id, documento_id, accion, detalle):
+    cursor.execute("""
+        INSERT INTO Bitacora (usuario_id, documento_id, accion, detalle, fecha)
+        VALUES (?, ?, ?, ?, GETDATE());
+    """, (usuario_id, documento_id, accion, detalle))
+
+
+def archivar_documento(documento_id, usuario_id, motivo):
+    """Borrado lógico. Cualquier usuario activo puede archivar. No toca versiones ni el PDF."""
+    motivo = (motivo or "").strip()
+    if not motivo:
+        return False, "Debe indicar el motivo del archivado."
+    conn = None
+    try:
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE Documento
+            SET estado = ?, fecha_archivado = GETDATE(),
+                usuario_archivo_id = ?, motivo_archivo = ?
+            WHERE id = ? AND estado = ?;
+        """, (ESTADO_INACTIVO, usuario_id, motivo, documento_id, ESTADO_ACTIVO))
+
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return False, "El documento no existe o ya está archivado."
+
+        _registrar_bitacora(cursor, usuario_id, documento_id, 'ARCHIVADO', f"Motivo: {motivo}")
+        conn.commit()
+        return True, "Documento archivado correctamente."
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"Error al archivar: {e}")
+        return False, str(e)
+    finally:
+        if conn:
+            conn.close()
+
+
+def restaurar_documento(documento_id, usuario_id):
+    """Solo administrador. Impide restaurar si ya hay un activo con el mismo expediente."""
+    conn = None
+    try:
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+
+        if not _es_admin(cursor, usuario_id):
+            return False, "Solo el administrador puede restaurar documentos."
+
+        cursor.execute(
+            "SELECT nro_expediente FROM Documento WHERE id = ? AND estado = ?;",
+            (documento_id, ESTADO_INACTIVO))
+        fila = cursor.fetchone()
+        if not fila:
+            return False, "El documento no está archivado."
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM Documento
+            WHERE UPPER(TRIM(nro_expediente)) = UPPER(TRIM(?)) AND estado = ?;
+        """, (fila[0], ESTADO_ACTIVO))
+        if cursor.fetchone()[0] > 0:
+            return False, ("Ya existe un documento activo con ese expediente. "
+                           "Archive primero el documento activo o consulte al administrador.")
+
+        cursor.execute("UPDATE Documento SET estado = ? WHERE id = ?;", (ESTADO_ACTIVO, documento_id))
+        _registrar_bitacora(cursor, usuario_id, documento_id, 'RESTAURADO', "Documento restaurado desde archivo")
+        conn.commit()
+        return True, "Documento restaurado correctamente."
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"Error al restaurar: {e}")
+        return False, str(e)
+    finally:
+        if conn:
+            conn.close()
+
+
+def obtener_documentos_archivados(usuario_id):
+    """Solo administrador. Devuelve lista vacía si el usuario no es admin."""
+    conn = None
+    try:
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+        if not _es_admin(cursor, usuario_id):
+            return []
+
+        cursor.execute("""
+            SELECT d.id, d.nro_expediente, d.nro_resolucion, dv.nro_version,
+                   d.tipo_documento, d.titulo, o.nombre AS organo_nombre,
+                   dv.ruta_unc, d.fecha_archivado, d.motivo_archivo,
+                   u.nombre_completo AS archivado_por
+            FROM Documento d
+            INNER JOIN Documento_versiones dv ON d.id = dv.documento_id AND dv.es_vigente = 1
+            LEFT JOIN Organos o ON d.organo_id = o.id
+            LEFT JOIN Usuario u ON d.usuario_archivo_id = u.id
+            WHERE d.estado = ?
+            ORDER BY d.fecha_archivado DESC;
+        """, (ESTADO_INACTIVO,))
+        filas = cursor.fetchall()
+
+        return [{
+            "id": f.id,
+            "nro_doc": f.nro_expediente,
+            "resolucion": f.nro_resolucion or "---",
+            "version": f.nro_version,
+            "tipo": f.tipo_documento,
+            "titulo": f.titulo,
+            "organo": f.organo_nombre or "Órgano no especificado",
+            "ruta_pdf": f.ruta_unc,
+            "fecha_archivado": f.fecha_archivado.strftime("%d/%m/%Y %H:%M") if f.fecha_archivado else "",
+            "motivo": f.motivo_archivo or "",
+            "archivado_por": f.archivado_por or "",
+        } for f in filas]
+    except Exception as e:
+        print(f"Error al listar archivados: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def obtener_archivado_por_expediente(nro_expediente):
+    """Devuelve el archivado más reciente con ese expediente, si existe (para avisar al operador)."""
+    conn = None
+    try:
+        conn = obtener_conexion()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT TOP 1 d.id, d.titulo
+            FROM Documento d
+            WHERE UPPER(TRIM(d.nro_expediente)) = UPPER(TRIM(?)) AND d.estado = ?
+            ORDER BY d.fecha_archivado DESC;
+        """, (nro_expediente, ESTADO_INACTIVO))
+        fila = cursor.fetchone()
+        return {"id": fila.id, "titulo": fila.titulo} if fila else None
+    except Exception as e:
+        print(f"Error al buscar archivado por expediente: {e}")
         return None
     finally:
         if conn:

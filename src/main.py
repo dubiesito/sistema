@@ -1,23 +1,25 @@
 import sys
 import os
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QInputDialog
 from PySide6.QtGui import QIcon
 from components.header import HeaderWidget
 from components.search_bar import SearchBarWidget
 from components.results_table import ResultsTableWidget
 from components.update_modal import UpdateVersionModal
 from components.upload_modal import UploadModal
+from components.archivados_modal import ArchivadosModal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 import db
 
 USUARIO_ACTIVO = None
-USUARIO_ACTIVO_ID = 1
+USUARIO_ACTIVO_ID = None
 
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.usuario_id = USUARIO_ACTIVO['id']
         
         self.setWindowTitle("Sistema de Gestión Documental - UNSAAC")
         self.resize(1050, 650)
@@ -45,8 +47,16 @@ class VentanaPrincipal(QMainWindow):
         self.tabla_resultados = ResultsTableWidget()
         self.tabla_resultados.solicitado_subir_pdf.connect(self.al_hacer_clic_subir_pdf)
         self.tabla_resultados.solicitado_ver_pdf.connect(self.al_ver_documento)
+        self.tabla_resultados.solicitado_archivar.connect(self.al_archivar)
+        self.tabla_resultados.solicitado_ver_archivados.connect(self.al_ver_archivados)
+        
         layout_principal.addWidget(self.tabla_resultados)
- 
+
+
+        self.tabla_resultados.set_es_admin(
+            bool(USUARIO_ACTIVO) and USUARIO_ACTIVO.get("rol") == db.ROL_ADMIN
+        )
+        
         # Conectar señales de la barra de búsqueda
         self.search_bar.texto_cambiado.connect(self.al_buscar_tiempo_real)
         self.search_bar.buscar_solicitado.connect(self.al_buscar_explicita)
@@ -61,6 +71,33 @@ class VentanaPrincipal(QMainWindow):
         # OBLIGATORIO: Asignar el widget central a la ventana principal
         self.setCentralWidget(widget_central)
 
+    
+    def al_archivar(self, doc):
+        confirmar = QMessageBox.question(
+            self, "Archivar documento",
+            f"¿Archivar el expediente {doc.get('nro_doc')}?\n\n"
+            "Dejará de aparecer en la tabla general. El PDF y su historial se conservan "
+            "y solo el administrador podrá verlo.",
+        )
+        if confirmar != QMessageBox.StandardButton.Yes:
+            return
+
+        motivo, ok = QInputDialog.getText(self, "Motivo del archivado", "Indique el motivo (obligatorio):")
+        if not ok or not motivo.strip():
+            return
+
+        exito, mensaje = db.archivar_documento(doc['id'], USUARIO_ACTIVO_ID, motivo)
+        if exito:
+            self.cargar_datos_iniciales()
+        else:
+            QMessageBox.warning(self, "No se pudo archivar", mensaje)
+
+    def al_ver_archivados(self):
+        from components.archivados_modal import ArchivadosModal
+        ArchivadosModal(USUARIO_ACTIVO_ID, self).exec()
+        self.cargar_datos_iniciales()
+    
+    
     def cargar_datos_iniciales(self):
         print("Conectando a SQL Server para traer documentos...")
         datos = db.obtener_documentos_tabla()
@@ -94,7 +131,7 @@ class VentanaPrincipal(QMainWindow):
             
         self._modal_abierto = True
         try:
-            modal = UploadModal(self)
+            modal = UploadModal(self, usuario_id=self.usuario_id)
             # Conectamos la señal de redirección inteligente antes de ejecutar
             modal.solicitado_redirigir_actualizacion.connect(self.abrir_modal_version)
             
@@ -119,8 +156,8 @@ class VentanaPrincipal(QMainWindow):
             self.cargar_datos_iniciales()
 
 def verificar_seguridad():
-    global USUARIO_ACTIVO
-    
+    global USUARIO_ACTIVO, USUARIO_ACTIVO_ID
+
     try:
         computadora_actual = os.getlogin()
     except Exception:
@@ -130,11 +167,12 @@ def verificar_seguridad():
 
     if not usuario_db:
         return False, f"ACCESO DENEGADO\n\nLa computadora '{computadora_actual}' no está autorizada para ingresar al Sistema de Resoluciones de la UNSAAC."
-    
+
     if usuario_db['activo'] == 0:
         return False, f"ACCESO BLOQUEADO\n\nEl usuario '{usuario_db['nombre_completo']}' se encuentra inactivo."
 
-    USUARIO_ACTIVO = usuario_db
+    USUARIO_ACTIVO = usuario_db              # diccionario: id, nombre_completo, activo, rol
+    USUARIO_ACTIVO_ID = usuario_db['id']     # solo el id, para auditoría
     return True, f"Bienvenido/a, {usuario_db['nombre_completo']}"
 
 

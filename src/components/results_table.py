@@ -8,6 +8,8 @@ class ResultsTableWidget(QWidget):
     solicitado_subir_pdf = Signal()
     solicitado_ver_pdf = Signal(dict)
     solicitado_actualizar_pdf = Signal(dict)
+    solicitado_archivar = Signal(dict)          # NUEVO
+    solicitado_ver_archivados = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +37,13 @@ class ResultsTableWidget(QWidget):
         self.btn_subir.clicked.connect(self.solicitado_subir_pdf.emit)
         caja_encabezado.addWidget(self.btn_subir)
 
+        self.btn_archivados = QPushButton(" Ver archivados")
+        self.btn_archivados.setIcon(qta.icon('fa5s.archive', color='#9b9b9b'))
+        self.btn_archivados.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_archivados.setVisible(False)   # solo se muestra si es admin
+        self.btn_archivados.clicked.connect(self.solicitado_ver_archivados.emit)
+        caja_encabezado.addWidget(self.btn_archivados)
+
         layout_principal.addLayout(caja_encabezado)
 
         # 2. TABLA DE RESULTADOS (6 Columnas)
@@ -42,9 +51,9 @@ class ResultsTableWidget(QWidget):
         self.tabla.setObjectName("tabla_documentos")
         
         # 6 Columnas: Se dividen 'Ver' y 'Editar'
-        self.tabla.setColumnCount(6)
+        self.tabla.setColumnCount(7)
         self.tabla.setHorizontalHeaderLabels([
-            "Nº de expediente", "Tipo", "Órgano", "Título", "Ver", "Editar"
+            "Nº de expediente", "Tipo", "Órgano", "Título", "Ver", "Editar", "Archivar"
         ])
 
         # Ajustes de estiramiento de columnas
@@ -54,7 +63,9 @@ class ResultsTableWidget(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) 
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)          
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed) 
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)            
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
+        self.tabla.setColumnWidth(6, 75)         
         
         # Ancho fijo de 50px para cada columna de botón
         self.tabla.setColumnWidth(4, 60)
@@ -80,6 +91,9 @@ class ResultsTableWidget(QWidget):
         self.setMinimumHeight(350)
        
 
+    def set_es_admin(self, es_admin: bool):
+        self.btn_archivados.setVisible(es_admin)
+ 
     def _aplicar_estilos(self):
         self.setStyleSheet("""
             QWidget {
@@ -104,6 +118,22 @@ class ResultsTableWidget(QWidget):
                 background-color: #5A121E;
             }
             
+
+            QPushButton#btn_ver_archivados {
+                background-color: #475569;
+                color: white;
+                border-radius: 6px;
+                padding: 10px 18px;
+                font-weight: bold;
+                font-size: 13px;
+                border: none;
+            }
+            QPushButton#btn_ver_archivados:hover {
+                background-color: #334155;
+            }
+
+
+
             /* ESTILOS DE LA TABLA (MÁXIMO CONTRASTE) */
             QTableWidget {
                 background-color: transparent; /* Mata las esquinas blancas fantasmas */
@@ -198,6 +228,33 @@ class ResultsTableWidget(QWidget):
                 QPushButton:hover { background-color: #FEF3C7; border-radius: 4px; }
             """)
             btn_actualizar.clicked.connect(lambda _, d=doc: self.solicitado_actualizar_pdf.emit(d))
+
+
+            #columna6 el boton archivar
+            btn_archivar = QPushButton(" Archivar")
+            btn_archivar.setIcon(qta.icon('fa5s.archive', color='#B91C1C'))
+            btn_archivar.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_archivar.setToolTip("Archivar documento (borrado lógico)")
+            btn_archivar.setStyleSheet("""
+                QPushButton {
+                    background-color: #FFFFFF;
+                    color: #B91C1C;
+                    border: 1px solid #FCA5A5;
+                    border-radius: 4px;
+                    padding: 3px 8px;
+                    font-weight: bold;
+                    font-size: 12px;
+                }
+                QPushButton:hover { background-color: #FEE2E2; }
+            """)
+            btn_archivar.clicked.connect(lambda _, d=doc: self.solicitado_archivar.emit(d))
+
+            cell_archivar = QWidget()
+            layout_archivar = QHBoxLayout(cell_archivar)
+            layout_archivar.setContentsMargins(4, 4, 4, 4)
+            layout_archivar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout_archivar.addWidget(btn_archivar)
+            self.tabla.setCellWidget(row_idx, 6, cell_archivar)
 
             cell_editar = QWidget()
             layout_editar = QHBoxLayout(cell_editar)

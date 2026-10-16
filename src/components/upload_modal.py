@@ -10,13 +10,17 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, Q
 from PySide6.QtCore import Qt, QDate, Signal, QRegularExpression, QVariantAnimation
 from PySide6.QtGui import QFontMetrics, QRegularExpressionValidator, QColor, QPixmap, QImage
 from PIL import Image
+from datetime import datetime
 import db
 
 class UploadModal(QDialog):
     solicitado_redirigir_actualizacion = Signal(dict)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, usuario_id=None):
         super().__init__(parent)
+
+        self.usuario_id = usuario_id
+        
         self.setWindowTitle("SUBIR NUEVO DOCUMENTO - VISTA DIVIDIDA")
         self.resize(1200, 650)  # Ampliamos para el Split-View
         self.ruta_archivo_seleccionado = None
@@ -473,8 +477,17 @@ class UploadModal(QDialog):
                 )
                 self.solicitado_redirigir_actualizacion.emit(doc_existente)
                 self.reject() 
-                return        
-          
+                return   
+                 
+            archivado = db.obtener_archivado_por_expediente(nro_expediente_ingresado)
+            if archivado:
+                QMessageBox.information(
+                    self, "Expediente archivado",
+                    f"El expediente {nro_expediente_ingresado} tiene un registro archivado "
+                    f"(ID {archivado['id']}).\n\n"
+                    "El nuevo documento se registrará por separado y su PDF llevará "
+                    "un sufijo de reingreso en la carpeta de red."
+                )
         if not self.ruta_archivo_seleccionado:
             QMessageBox.warning(self, "Error", "Debe seleccionar un archivo PDF.")
             return
@@ -523,8 +536,7 @@ class UploadModal(QDialog):
             os.makedirs(RUTA_CARPETA_RED, exist_ok=True)
             shutil.copy2(self.ruta_archivo_seleccionado, ruta_destino)
 
-            from main import USUARIO_ACTIVO_ID
-            exito, mensaje_error = db.insertar_documento(datos, ruta_destino, USUARIO_ACTIVO_ID)
+            exito, mensaje_error = db.insertar_documento(datos, ruta_destino, self.usuario_id)
 
             if exito:
                 QMessageBox.information(self, "Éxito", f"Documento subido correctamente a:\n{carpeta_limpia}")
@@ -540,3 +552,18 @@ class UploadModal(QDialog):
         finally:
             self.btn_guardar.setEnabled(True)
             self.btn_guardar.setText(" Subir documento")
+
+
+def _ruta_sin_colision(ruta):
+    """Si el PDF ya existe en la carpeta de red, agrega un sufijo de reingreso.
+    Nunca sobrescribe un archivo existente (evita pérdida de documentos archivados)."""
+    if not os.path.exists(ruta):
+        return ruta
+    base, ext = os.path.splitext(ruta)
+    sufijo = datetime.now().strftime("_REINGRESO_%Y%m%d_%H%M%S")
+    candidata = f"{base}{sufijo}{ext}"
+    contador = 2
+    while os.path.exists(candidata):
+        candidata = f"{base}{sufijo}_{contador}{ext}"
+        contador += 1
+    return candidata
